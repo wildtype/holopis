@@ -42,6 +42,10 @@ class Xdotool
     def window_minimize(window)
       `xdotool windowminimize #{window}`
     end
+
+    def window_setsize(window:, width:, height:)
+      `xdotool windowsize #{window} #{width} #{height}`
+    end
   end
 end
 
@@ -71,6 +75,44 @@ class Desktop
   def minimize_all(except: [])
     (windows - except).each do |window|
       window.minimize!
+    end
+  end
+
+  def optimal_width
+    @width / windows.size
+  end
+
+  def nth_horizontal_position(n)
+    (@width / windows.size.to_f).ceil * n
+  end
+
+  def centered_order
+    size = windows.size
+    size.even? ? (size - 1)/2 : size/2
+  end
+
+  def move_active_window_to_center!
+    active_window_position = @windows.index(active_window)
+    @windows.insert(centered_order, @windows.delete_at(active_window_position))
+  end
+
+  def rearange_windows!
+    @windows.sort_by!{|window| window.geometry.x}
+
+    move_active_window_to_center!
+    windows.each_with_index do |window, index|
+      window.resize_optimal!
+
+      horizontal_position = if index.zero?
+                              0
+                            else
+                              previous_window = windows[index-1]
+                              previous_window.geometry.x + previous_window.geometry.width + 8
+                            end
+      window.move_to!(
+        x: horizontal_position,
+        y: window.vertical_centered_position
+      )
     end
   end
 
@@ -113,6 +155,11 @@ class Window
     }
   end
 
+  def vertical_centered_position
+    desktop_center_y = desktop.height / 2
+    desktop_center_y - (geometry.height / 2)
+  end
+
   def activate!
     Xdotool.window_activate(id)
   end
@@ -120,10 +167,26 @@ class Window
   def minimize!
     Xdotool.window_minimize(id)
   end
+
+  def resize_optimal!
+    Xdotool.window_setsize(
+      window: id,
+      width: desktop.optimal_width,
+      height: geometry.height
+    )
+  end
+
+  def move_to!(x:, y:)
+    Xdotool.window_move(window: id, x: x, y: y)
+  end
 end
 
 desktop = Desktop.new
-active_window = desktop.active_window
 
-desktop.minimize_all(except: [active_window])
-active_window.center!
+if ARGV[0] == 'focus'
+  active_window = desktop.active_window
+  desktop.minimize_all(except: [active_window])
+  active_window.center!
+else
+  desktop.rearange_windows!
+end
